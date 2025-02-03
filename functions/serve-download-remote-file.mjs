@@ -1,7 +1,6 @@
 import path from 'path';
 import { STORAGE_PATH } from '../constants.mjs';
-import downloadFile from "./download-file.mjs";
-import saveFileStream from "./save-file-stream.mjs";
+import delegateDownloadWork from "./download-file.mjs";
 
 const DOWNLOADS_PATH = 'downloads';
 
@@ -19,16 +18,18 @@ async function serveDownloadRemoteFile(req, res) {
     return;
   }
 
-  downloadFile(url)
-    .then(({ fileStream, filename }) => {
-      return saveFileStream(fileStream, path.join(process.cwd(), STORAGE_PATH + '/' + DOWNLOADS_PATH), requestedFilename || filename);
-    })
-    .then(() => {
-      res.status(200).send('Fichier téléchargé et sauvegardé');
+  delegateDownloadWork({
+    url,
+    downloadDirPath: path.join(process.cwd(), STORAGE_PATH + '/' + DOWNLOADS_PATH),
+    requestedFilename
+  }).then((message) => {
+      const { filename, fileSize } = message;
+      return res.status(200).send(`Fichier téléchargé et sauvegardé: ${filename} (${fileSize} octets)`);
     })
     .catch((error) => {
-      res.status(500).send(error);
-    })
+      console.error('Erreur dans le worker:', error);
+      return res.status(500).send(error.toString());
+    });
 }
 
 export default serveDownloadRemoteFile;

@@ -1,8 +1,7 @@
-import http from 'http';
-import https from 'https';
 import stream from 'stream';
 import crypto from 'crypto';
 import mime from 'mime-types';
+import { Worker } from 'worker_threads';
 
 /**
  * Sert à télécharger un fichier distant
@@ -15,31 +14,42 @@ import mime from 'mime-types';
  */
 async function downloadFile(url) {
   return new Promise((resolve, reject) => {
-    const client = url.startsWith('https') ? https : http;
-    client.get(url, (response) => {
-      if (response.statusCode !== 200) {
-        console.error(`Erreur lors du téléchargement du fichier: ${response.statusMessage}`);
-        reject();
-      }
-      const contentDisposition = response.headers['content-disposition'];
-      const contentType = response.headers['content-type'];
-      // Code pour extraire le nom du fichier. Utilise un nom aléatoire si le nom du fichier n'est pas spécifié
-      const filename = contentDisposition?.split(';')[1].split('=')[1] || 
-        (crypto.randomUUID().toString() + (contentType ? '.' + mime.extension(contentType) : ''));
-      const readStream = new stream.Readable();
-      response
-        .on('data', (chunk) => {
-          readStream.push(chunk);
-        })
-        .on('end', () => {
-          readStream.push(null);
-        })
-        .on('error', (error) => {
-          console.error(error);
-        });
-      resolve({ fileStream: readStream, filename });
+    fetch(url, {}) 
+      .then((response) => { 
+        if (response.status !== 200) { 
+          console.error(`Erreur lors du téléchargement du fichier: ${response.status} ${response.statusText}`); 
+          reject(); 
+          return; 
+        } 
+        const contentDisposition = response.headers['content-disposition']; 
+        const contentType = response.headers['content-type']; 
+        // Code pour extraire le nom du fichier. Utilise un nom aléatoire si le nom du fichier n'est pas spécifié
+        const filename = contentDisposition?.split(';')[1].split('=')[1] ||
+          (crypto.randomUUID().toString() + (contentType ? '.' + mime.extension(contentType) : '')); 
+        resolve({ fileStream: stream.Readable.fromWeb(response.body), filename }); 
+      }); 
     });
-  });
 }
 
+/**
+ * Délègue le travail de téléchargement d'un fichier distant à un worker
+ * 
+ * @param {*} workerData - Paramètres du worker
+ * @returns Une promesse du résultat du travail
+ */
+function delegateDownloadWork(workerData) {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker("./works/download-file.work.mjs", {
+        workerData
+      });
+      worker.on('message', (message) => {
+        resolve(message);
+      });
+      worker.on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
 export default downloadFile;
+export { delegateDownloadWork };
